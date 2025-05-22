@@ -29,6 +29,7 @@ BlueEdge is a modern document analysis platform built for the Conservative Resea
 3. Set up your environment variables:
    - Create a `.env.local` file in the root directory
    - Add your OpenAI API key: `OPENAI_API_KEY=your_api_key_here`
+   - Add your Gemini API key: `GEMINI_API_KEY=your_gemini_api_key_here` (enables Gemini-based analysis)
 
 4. Initialize the database:
    ```
