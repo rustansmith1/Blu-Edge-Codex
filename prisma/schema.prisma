@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  markdown    String
+  metadata    Json?    // Optional JSON field for document metadata
+  folder      String?  // Optional folder for document organization
+  isEmbedded  Boolean  @default(false) // Whether document has been embedded for vector search
+  chunks      Chunk[]  // Document chunks for vector search
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  chats       Chat[]
+}
+
+model Chat {
+  id          String    @id @default(cuid())
+  documentId  String
+  document    Document  @relation(fields: [documentId], references: [id])
+  messages    Message[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  chatId      String
+  chat        Chat     @relation(fields: [chatId], references: [id])
+  role        String   // 'user' or 'assistant'
+  content     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Chunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content     String   // The chunk text content
+  embedding   Bytes?   // The vector embedding of the chunk
+  metadata    Json?    // Additional metadata like position in document
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
