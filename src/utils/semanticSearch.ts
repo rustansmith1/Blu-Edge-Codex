@@ -200,46 +200,47 @@ export const extractNumericalData = (searchResults: any[]): { value: number, isP
   ];
   
   searchResults.forEach(result => {
-    const matches = result.content.match(numberRegex);
-    if (matches) {
-      matches.forEach(match => {
-        // Clean the match (remove commas, handle currency symbols)
-        let cleanedMatch = match.replace(/,/g, '');
-        const hasCurrency = /[£$€]/.test(cleanedMatch);
-        if (hasCurrency) {
-          cleanedMatch = cleanedMatch.replace(/[£$€]\s*/g, '');
-        }
-        
-        const isPercentage = cleanedMatch.endsWith('%');
-        const value = parseFloat(isPercentage ? cleanedMatch.slice(0, -1) : cleanedMatch);
-        
-        // Get more context around the number
-        const startIndex = Math.max(0, result.content.indexOf(match) - 100);
-        const endIndex = Math.min(result.content.length, result.content.indexOf(match) + match.length + 100);
-        const context = result.content.substring(startIndex, endIndex);
-        
-        // Determine if this number is likely important based on surrounding keywords
-        const isImportant = financialKeywords.some(keyword => 
-          context.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
-        // Extract the entity this number relates to (if any)
-        let entity = '';
-        const entityMatch = context.match(/(?:council|authority|borough|district|county|unitary|metropolitan)\s+(?:of\s+)?([A-Z][a-z]+(\s+[A-Z][a-z]+)*)/i);
-        if (entityMatch && entityMatch[1]) {
-          entity = entityMatch[1].trim();
-        }
-        
-        numericalData.push({
-          value,
-          isPercentage,
-          hasCurrency,
-          context,
-          documentTitle: result.documentTitle,
-          isImportant,
-          entity,
-          metadata: result.metadata
-        });
+    const matches = result.content.matchAll(numberRegex);
+    for (const match of matches) {
+      const matchText = match[0];
+      const index = match.index ?? result.content.indexOf(matchText);
+
+      // Clean the match (remove commas, handle currency symbols)
+      let cleanedMatch = matchText.replace(/,/g, '');
+      const hasCurrency = /[£$€]/.test(cleanedMatch);
+      if (hasCurrency) {
+        cleanedMatch = cleanedMatch.replace(/[£$€]\s*/g, '');
+      }
+
+      const isPercentage = cleanedMatch.endsWith('%');
+      const value = parseFloat(isPercentage ? cleanedMatch.slice(0, -1) : cleanedMatch);
+
+      // Get more context around the number
+      const startIndex = Math.max(0, index - 100);
+      const endIndex = Math.min(result.content.length, index + matchText.length + 100);
+      const context = result.content.substring(startIndex, endIndex);
+
+      // Determine if this number is likely important based on surrounding keywords
+      const isImportant = financialKeywords.some(keyword =>
+        context.toLowerCase().includes(keyword.toLowerCase())
+      );
+
+      // Extract the entity this number relates to (if any)
+      let entity = '';
+      const entityMatch = context.match(/(?:council|authority|borough|district|county|unitary|metropolitan)\s+(?:of\s+)?([A-Z][a-z]+(\s+[A-Z][a-z]+)*)/i);
+      if (entityMatch && entityMatch[1]) {
+        entity = entityMatch[1].trim();
+      }
+
+      numericalData.push({
+        value,
+        isPercentage,
+        hasCurrency,
+        context,
+        documentTitle: result.documentTitle,
+        isImportant,
+        entity,
+        metadata: result.metadata
       });
     }
   });
