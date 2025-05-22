@@ -31,45 +31,58 @@ const getTextSplitter = () => {
   });
 };
 
-// Store document chunks in memory for vector search
-const documentChunks = new Map<string, { content: string, metadata: any }[]>();
+// Store document chunks in memory for quick access
+const documentChunks = new Map<string, { content: string; metadata: any }[]>();
 
 // Create document chunks for vector search
 export const createDocumentChunks = async (documentId: string) => {
   try {
-    // Get document from database
+    // Get document from database along with any existing chunks
     const document = await prisma.document.findUnique({
       where: { id: documentId },
+      include: { chunks: true },
     });
     
     if (!document) {
       throw new Error(`Document with ID ${documentId} not found`);
     }
-    
+
+    // If chunks already exist, load them into memory
+    if (document.chunks && document.chunks.length > 0) {
+      const cached = document.chunks.map(c => ({ content: c.content, metadata: c.metadata }));
+      documentChunks.set(documentId, cached);
+      return cached.length;
+    }
+
     // Split document into chunks
     const textSplitter = getTextSplitter();
     const textChunks = await textSplitter.splitText(document.content);
-    
-    // Create chunks in memory
-    const chunks = [];
+
+    const chunks: { content: string; metadata: any }[] = [];
+    const dbChunks: any[] = [];
+
     for (let i = 0; i < textChunks.length; i++) {
-      const chunk = textChunks[i];
-      
-      chunks.push({
-        content: chunk,
-        metadata: {
-          documentId,
-          index: i,
-          title: document.title,
-          position: `Chunk ${i + 1} of ${textChunks.length}`,
-        },
-      });
+      const chunkText = textChunks[i];
+      const metadata = {
+        documentId,
+        index: i,
+        title: document.title,
+        position: `Chunk ${i + 1} of ${textChunks.length}`,
+      };
+
+      const embedding = await getEmbedding(chunkText);
+      const embeddingBuffer = Buffer.from(Float32Array.from(embedding).buffer);
+
+      chunks.push({ content: chunkText, metadata });
+      dbChunks.push({ documentId, content: chunkText, embedding: embeddingBuffer, metadata });
     }
-    
-    // Store chunks in memory
+
+    await prisma.chunk.createMany({ data: dbChunks });
+    await prisma.document.update({ where: { id: documentId }, data: { isEmbedded: true } });
+
     documentChunks.set(documentId, chunks);
-    
-    return textChunks.length;
+
+    return chunks.length;
   } catch (error) {
     console.error('Error creating document chunks:', error);
     throw error;
@@ -119,6 +132,7 @@ export const semanticSearch = async (query: string, limit: number = 5) => {
       select: {
         id: true,
         title: true,
+        isEmbedded: true,
       },
     });
     
@@ -127,12 +141,17 @@ export const semanticSearch = async (query: string, limit: number = 5) => {
     
     // Process each document
     for (const document of documents) {
-      // Get chunks for this document (or create them if they don't exist)
+      // Get chunks for this document (or create/load them if they don't exist)
       let chunks = documentChunks.get(document.id);
       if (!chunks) {
-        // Create chunks for this document
-        await createDocumentChunks(document.id);
-        chunks = documentChunks.get(document.id) || [];
+        if (document.isEmbedded) {
+          const dbChunks = await prisma.chunk.findMany({ where: { documentId: document.id } });
+          chunks = dbChunks.map(c => ({ content: c.content, metadata: c.metadata }));
+          documentChunks.set(document.id, chunks);
+        } else {
+          await createDocumentChunks(document.id);
+          chunks = documentChunks.get(document.id) || [];
+        }
       }
       
       // Process each chunk
@@ -717,6 +736,10 @@ export const processAllDocuments = async () => {
     
     // Process each document
     for (const document of documents) {
+      if (document.isEmbedded) {
+        console.log(`Skipping document ${document.title} - already processed`);
+        continue;
+      }
       console.log(`Processing document: ${document.title} (${document.id})`);
       await createDocumentChunks(document.id);
     }
